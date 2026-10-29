@@ -151,7 +151,7 @@ with tab_overview:
             )
             .properties(height=200)
         )
-        st.altair_chart(chart, use_container_width=True)
+        st.altair_chart(chart, width="stretch")
 
     with c2:
         st.markdown("**Why invoices were stopped**")
@@ -169,7 +169,7 @@ with tab_overview:
                 )
                 .properties(height=200)
             )
-            st.altair_chart(chart2, use_container_width=True)
+            st.altair_chart(chart2, width="stretch")
         else:
             st.info("No exceptions in this run.")
 
@@ -216,7 +216,7 @@ with tab_run:
 
     st.dataframe(
         show.style.apply(_style, axis=1).format({"Amount": "${:,.2f}"}),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
     st.caption(f"{len(view)} of {total} invoices shown.")
