@@ -1,0 +1,19 @@
+source_file,scenario,extracted,vendor_result,vendor_expected,vendor_extracted,invoice_number_result,invoice_number_expected,invoice_number_extracted,invoice_date_result,invoice_date_expected,invoice_date_extracted,total_result,total_expected,total_extracted,all_fields,footing_ok
+INV01_comcast_business.pdf,clean,yes,PASS,Comcast Business,Comcast Business,PASS,CB-8841-0226,CB-8841-0226,PASS,2026-02-03,2026-02-03,PASS,449.99,449.99,PASS,TRUE
+INV02_hartwell_price.pdf,clean,yes,PASS,Hartwell & Price LLP,Hartwell & Price LLP,PASS,HP-2026-0214,HP-2026-0214,PASS,2026-02-10,2026-02-10,PASS,2463.75,2463.75,PASS,TRUE
+INV03_keller_rowe_cpas.pdf,clean,yes,PASS,Keller Rowe CPAs,Keller Rowe CPAs,PASS,KR-26-0107,KR-26-0107,PASS,2026-02-12,2026-02-12,PASS,2150.00,2150,PASS,TRUE
+INV04_coretech_hardware.pdf,clean,yes,PASS,CoreTech Hardware Supply,CORETECH HARDWARE SUPPLY,PASS,CT-INV-558210,CT-INV-558210,PASS,2026-02-05,2026-02-05,PASS,1562.50,1562.5,PASS,TRUE
+INV05_officemart_supply.pdf,clean,yes,FAIL,OfficeMart Supply,OFFICEMART,PASS,OM-0226-33017,OM-0226-33017,PASS,2026-02-17,2026-02-17,PASS,447.00,447,FAIL,TRUE
+INV06_hubspot.pdf,clean,yes,PASS,HubSpot,HubSpot,PASS,HS-INV-20260209-77,HS-INV-20260209-77,PASS,2026-02-09,2026-02-09,PASS,800.00,800,PASS,TRUE
+INV07_google_workspace.pdf,clean,yes,PASS,Google Workspace,Google Workspace,PASS,GW-5530021947,GW-5530021947,PASS,2026-02-02,2026-02-02,PASS,300.00,300,PASS,TRUE
+INV08_slack_technologies.pdf,clean,yes,PASS,Slack Technologies,Slack Technologies,PASS,SLK-INV-4471920,SLK-INV-4471920,PASS,2026-02-04,2026-02-04,PASS,210.00,210,PASS,TRUE
+INV09_amazon_web_services.pdf,clean,yes,PASS,Amazon Web Services,amazon web services,PASS,AWS-INV-2026-02-4417821,AWS-INV-2026-02-4417821,PASS,2026-02-03,2026-02-03,PASS,1946.16,1946.16,PASS,TRUE
+INV10_gusto.pdf,clean,yes,PASS,Gusto,Gusto,PASS,GST-0226-10-88231,GST-0226-10-88231,PASS,2026-02-02,2026-02-02,PASS,182.00,182,PASS,TRUE
+INV11_skyward_travel.pdf,clean,yes,PASS,Skyward Travel Partners,Skyward Travel Partners,PASS,SKY-TR-20260218-0391,SKY-TR-20260218-0391,PASS,2026-02-18,2026-02-18,PASS,745.60,745.6,PASS,TRUE
+INV12_delaware_division_of_corporations.pdf,clean,yes,PASS,Delaware Division of Corporations,Delaware Division of Corporations,PASS,DE-DOC-2026-0225-1180,DE-DOC-2026-0225-1180,PASS,2026-02-24,2026-02-24,PASS,200.00,200,PASS,TRUE
+INV13_comcast_business_resend.pdf,exact_duplicate,yes,PASS,Comcast Business,Comcast Business,PASS,CB-8841-0226,CB-8841-0226,PASS,2026-02-03,2026-02-03,PASS,449.99,449.99,PASS,TRUE
+INV14_slack_technologies_resend.pdf,exact_duplicate,yes,PASS,Slack Technologies,Slack Technologies,PASS,SLK-INV-4471920,SLK-INV-4471920,PASS,2026-02-04,2026-02-04,PASS,210.00,210,PASS,TRUE
+INV15_hubspot_second.pdf,same_amount_new_number,yes,PASS,HubSpot,HubSpot,PASS,HS-INV-20260223-91,HS-INV-20260223-91,PASS,2026-02-23,2026-02-23,PASS,800.00,800,PASS,TRUE
+INV16_officemart_supply_b.pdf,lines_do_not_foot,yes,FAIL,OfficeMart Supply,OFFICEMART,PASS,OM-0226-33902,OM-0226-33902,PASS,2026-02-20,2026-02-20,PASS,391.75,391.75,FAIL,FALSE
+INV17_brightline_data_services.pdf,unknown_vendor,yes,PASS,Brightline Data Services LLC,Brightline Data Services LLC,PASS,BDS-2291,BDS-2291,PASS,2026-02-19,2026-02-19,PASS,1400.00,1400,PASS,TRUE
+INV18_mateo_alvarez_dev.pdf,needs_approval,yes,PASS,Mateo Alvarez Dev LLC,Mateo Alvarez Dev LLC,PASS,MAD-2026-02,MAD-2026-02,PASS,2026-02-26,2026-02-26,PASS,11200.00,11200,PASS,TRUE

@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "properties": {
+    "vendor_name": {
+      "type": "string"
+    },
+    "vendor_address": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "invoice_number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "invoice_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "due_date": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "po_number": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "service_period": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "qty": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "unit_price": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "amount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "description",
+          "amount"
+        ]
+      }
+    },
+    "subtotal": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "tax": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "vendor_name",
+    "invoice_number",
+    "invoice_date",
+    "line_items",
+    "total"
+  ]
+}

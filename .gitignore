@@ -1,0 +1,26 @@
+# Secrets — never commit real credentials
+.env
+*.env
+!.env.example
+credentials.json
+*token*.json
+*secret*
+
+# n8n local data
+.n8n/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Generated sample invoices (reproducible via scripts/generate_sample_invoices.py)
+sample_invoices/*.pdf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

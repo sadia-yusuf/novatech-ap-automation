@@ -1,0 +1,1197 @@
+{
+  "name": "P6 – Invoice extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "NovaTech – Upload vendor invoice",
+        "formDescription": "Upload one vendor invoice (PDF)",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "invoice",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".pdf",
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -96,
+        0
+      ],
+      "id": "d65d2691-9bb3-4700-b166-1b91493bbef1",
+      "name": "On form submission",
+      "webhookId": "5aa10876-40af-4505-a12d-e0ac5d861d1c",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "invoice",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        -176
+      ],
+      "id": "7889f237-bbbf-4da2-8e13-6f7008f59a73",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=    Extract the invoice data from this document text:\n\n    {{ $json.text }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an accounts-payable data extraction assistant for NovaTech Consulting LLC. Rules: 1. Extract ONLY what is printed on the document. Never guess or calculate missing values. 2. If a field is not on the document, return null. 3. Dates in YYYY-MM-DD format. Vendors are US-based: read dates as MM/DD/YYYY. 4. Amounts as plain numbers (no currency symbols or commas), e.g. 1373.50. 5. Copy line items exactly as printed, one entry per line. Do not merge or split lines. 6. \"total\" is the total STATED on the invoice, even if the lines do not add up to it. 7. service_period: the period the charge relates to if printed (e.g. \"2026-01-01 to 2026-01-31\"), else null."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        0
+      ],
+      "id": "7c468d48-eced-4671-86bd-19a7aa45fd04",
+      "name": "Basic LLM Chain"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        336,
+        208
+      ],
+      "id": "13cbb422-d6a3-45aa-b69e-1d5a5e476c79",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"vendor_name\":     { \"type\": \"string\" },\n    \"vendor_address\":  { \"type\": [\"string\", \"null\"] },\n    \"invoice_number\":  { \"type\": [\"string\", \"null\"] },\n    \"invoice_date\":    { \"type\": [\"string\", \"null\"] },\n    \"due_date\":        { \"type\": [\"string\", \"null\"] },\n    \"po_number\":       { \"type\": [\"string\", \"null\"] },\n    \"currency\":        { \"type\": [\"string\", \"null\"] },\n    \"service_period\":  { \"type\": [\"string\", \"null\"] },\n    \"line_items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"description\": { \"type\": \"string\" },\n          \"qty\":         { \"type\": [\"number\", \"null\"] },\n          \"unit_price\":  { \"type\": [\"number\", \"null\"] },\n          \"amount\":      { \"type\": \"number\" }\n        },\n        \"required\": [\"description\", \"amount\"]\n      }\n    },\n    \"subtotal\": { \"type\": [\"number\", \"null\"] },\n    \"tax\":      { \"type\": [\"number\", \"null\"] },\n    \"total\":    { \"type\": \"number\" }\n  },\n  \"required\": [\"vendor_name\", \"invoice_number\", \"invoice_date\", \"line_items\", \"total\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        592,
+        208
+      ],
+      "id": "ef6ce058-6b0d-4d56-8b78-9375e8408974",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Part C – normalise AI output and run arithmetic checks (rules, not AI)\n// Mode: Run Once for Each Item\nconst o = $json.output;\nconst src = $('Normalise intake').item.json;          // intake metadata (form or email)\nconst round2 = n => Math.round((Number(n) || 0) * 100) / 100;\n\n// Clean line items\nconst lines = (o.line_items || []).map(l => ({\n  description: l.description,\n  qty: l.qty,\n  unit_price: l.unit_price,\n  amount: round2(l.amount),\n}));\n\n// Footing check: lines + tax must equal the stated total\nconst linesSum    = round2(lines.reduce((s, l) => s + l.amount, 0));\nconst tax         = round2(o.tax);\nconst statedTotal = round2(o.total);\nconst footingDiff = round2(statedTotal - (linesSum + tax));\n\n// Flags (record problems – never fix them)\nconst flags = [];\nif (Math.abs(footingDiff) > 0.01) flags.push(`FOOTING_MISMATCH: lines+tax ${round2(linesSum + tax)} vs stated ${statedTotal}`);\nif (!o.invoice_number) flags.push('MISSING_INVOICE_NUMBER');\nif (!o.invoice_date)   flags.push('MISSING_INVOICE_DATE');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(o.invoice_date || '')) flags.push('BAD_DATE_FORMAT');\nif (lines.length === 0) flags.push('NO_LINE_ITEMS');\n\nlet currency = o.currency;\nif (!currency) { currency = 'USD'; flags.push('CURRENCY_DEFAULTED_USD'); }\n\n// Output – field names match the Google Sheet headers exactly\nreturn {\n  received_at:      src.received_at,\n  source_channel:   src.source_channel,\n  email_from:       src.email_from,\n  email_subject:    src.email_subject,\n  email_message_id: src.email_message_id,\n  source_file:      src.source_file,\n  vendor_name:      o.vendor_name,\n  invoice_number:   o.invoice_number,\n  invoice_date:     o.invoice_date,\n  due_date:         o.due_date,\n  service_period:   o.service_period,\n  currency,\n  line_count:       lines.length,\n  lines_sum:        linesSum,\n  tax,\n  stated_total:     statedTotal,\n  footing_diff:     footingDiff,\n  footing_ok:       Math.abs(footingDiff) <= 0.01,\n  flags:            flags.join(' | '),\n  lines_json:       JSON.stringify(lines),\n  extracted_at:     new Date().toISOString(),\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "c8f090ec-eb78-42c3-993d-dae990a0d0cb",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            },
+            {}
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "has:attachment filename:pdf"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -96,
+        -192
+      ],
+      "id": "1f27fb13-2cb2-4e4e-a981-d7a6ab261c8e",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "uSSHF8PWzCSA1dKI",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise intake – one item per PDF, same shape for every channel\nconst out = [];\n$input.all().forEach((item, i) => {\n  const j = item.json, bin = item.binary || {};\n\n  if (j.submittedAt) {                       // came from the upload form\n    out.push({\n      json: { source_channel: 'form', source_file: j.invoice?.filename,\n              email_from: null, email_subject: null, email_message_id: null,\n              received_at: j.submittedAt },\n      binary: { invoice: bin.invoice },\n      pairedItem: { item: i },\n    });\n    return;\n  }\n\n  for (const key of Object.keys(bin)) {      // came from Gmail – one item per PDF\n    const f = bin[key];\n    if (f.mimeType !== 'application/pdf') continue;\n    out.push({\n      json: { source_channel: 'email', source_file: f.fileName,\n              email_from: j.from?.value?.[0]?.address || j.from?.text || null,\n              email_subject: j.subject || null,\n              email_message_id: j.id || null,\n              received_at: j.date || new Date().toISOString() },\n      binary: { invoice: f },\n      pairedItem: { item: i },\n    });\n  }\n});\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        -192
+      ],
+      "id": "fb4562d3-d053-48c1-9e23-76118d9f2135",
+      "name": "Normalise intake"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q",
+          "mode": "list",
+          "cachedResultName": "NovaTech AP – Invoice Register",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1650177374,
+          "mode": "list",
+          "cachedResultName": "register",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit#gid=1650177374"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_channel",
+              "displayName": "source_channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_from",
+              "displayName": "email_from",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_subject",
+              "displayName": "email_subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_message_id",
+              "displayName": "email_message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_file",
+              "displayName": "source_file",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "vendor_name",
+              "displayName": "vendor_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_number",
+              "displayName": "invoice_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_date",
+              "displayName": "invoice_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service_period",
+              "displayName": "service_period",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "line_count",
+              "displayName": "line_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lines_sum",
+              "displayName": "lines_sum",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tax",
+              "displayName": "tax",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stated_total",
+              "displayName": "stated_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "footing_diff",
+              "displayName": "footing_diff",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "footing_ok",
+              "displayName": "footing_ok",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "flags",
+              "displayName": "flags",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lines_json",
+              "displayName": "lines_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "extracted_at",
+              "displayName": "extracted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "qbo_vendor_id",
+              "displayName": "qbo_vendor_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "qbo_vendor_name",
+              "displayName": "qbo_vendor_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "exception_reason",
+              "displayName": "exception_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_notes",
+              "displayName": "review_notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "controls_run_at",
+              "displayName": "controls_run_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1360,
+        176
+      ],
+      "id": "96a311cc-941e-4a83-b005-54e731544f07",
+      "name": "Append to register",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8VcWuAZMniGkwK1q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "vendor",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        800,
+        176
+      ],
+      "id": "c42dc826-149c-4852-98ea-5c47ba5cf6d2",
+      "name": "QBO vendors",
+      "executeOnce": true,
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "MOT4xF5Dgu0847sf",
+          "name": "QBO Sandbox – NovaTech"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q",
+          "mode": "list",
+          "cachedResultName": "NovaTech AP – Invoice Register",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1650177374,
+          "mode": "list",
+          "cachedResultName": "register",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit#gid=1650177374"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1008,
+        176
+      ],
+      "id": "631ba510-726a-4928-8359-7bd6a3ada72e",
+      "name": "Read register",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8VcWuAZMniGkwK1q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Day 3 – Controls: vendor match, duplicates, footing, dates, period & capex review, approval limit\n// Mode: Run Once for All Items\nconst CONFIG = {\n  AS_OF: '2026-02-28',        // processing date for the NovaTech simulation (Feb 2026 AP run)\n  APPROVAL_LIMIT: 2500,       // invoices above this need approval\n  MAX_AGE_DAYS: 90,           // older invoices are flagged as stale\n  POSSIBLE_DUP_DAYS: 30,      // same vendor + same amount within this window = possible duplicate\n  CAPEX_MIN: 1000,            // NovaTech capitalisation threshold\n  CAPEX_WORDS: ['laptop', 'computer', 'macbook', 'server', 'monitor', 'printer', 'desk', 'chair', 'furniture'],\n};\n\n// ---------- helpers ----------\nconst norm = s => String(s || '').toLowerCase()\n  .replace(/&/g, ' and ')\n  .replace(/[^a-z0-9 ]/g, ' ')\n  .replace(/\\b(inc|llc|ltd|limited|co|corp|corporation|company|the)\\b/g, ' ')\n  .replace(/\\s+/g, ' ').trim();\nconst normNo = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');\nconst daysBetween = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);\nconst firstDate = s => (String(s || '').match(/\\d{4}-\\d{2}-\\d{2}/) || [null])[0];\n\n// ---------- 1. Vendor master (QuickBooks) ----------\nconst vendors = $('QBO vendors').all()\n  .map(v => ({ id: String(v.json.Id), name: v.json.DisplayName, key: norm(v.json.DisplayName) }))\n  .filter(v => v.key);\n\nfunction matchVendor(name) {\n  const k = norm(name);\n  if (!k) return null;\n  return vendors.find(v => v.key === k)                                            // exact\n      || vendors.find(v => v.key.startsWith(k + ' ') || k.startsWith(v.key + ' ')) // e.g. \"Slack\" ↔ \"Slack Technologies\"\n      || null;\n}\nconst vendorKey = name => { const m = matchVendor(name); return m ? m.id : 'raw:' + norm(name); };\n\n// ---------- 2. Invoices already in the register + this batch ----------\nconst history = $('Read register').all().map(r => r.json).filter(r => r.invoice_number);\nconst batch   = $('Code in JavaScript').all().map(i => i.json);\nconst seen = history.map(r => ({\n  vk: vendorKey(r.vendor_name), no: normNo(r.invoice_number),\n  total: Number(r.stated_total), date: r.invoice_date, file: r.source_file,\n}));\nconst runAt = new Date().toISOString();\n\n// ---------- 3. Apply controls to each invoice ----------\nreturn batch.map(inv => {\n  const blocking = [], notes = [];\n  let hold = false, needsApproval = false;\n\n  // Vendor master match\n  const v = matchVendor(inv.vendor_name);\n  if (!v) blocking.push('UNKNOWN_VENDOR');\n  else if (norm(v.name) !== norm(inv.vendor_name)) notes.push(`VENDOR_MATCHED_TO: ${v.name}`);\n  const vk = v ? v.id : 'raw:' + norm(inv.vendor_name);\n  const no = normNo(inv.invoice_number);\n  const total = Number(inv.stated_total);\n\n  // Duplicates (against register history AND earlier invoices in this batch)\n  const exact = seen.find(s => s.vk === vk && s.no && s.no === no);\n  if (exact) {\n    blocking.push(`EXACT_DUPLICATE of ${exact.file || exact.no}`);\n  } else {\n    const possible = seen.find(s => s.vk === vk && s.no !== no &&\n      Math.abs(s.total - total) < 0.01 &&\n      Math.abs(daysBetween(s.date, inv.invoice_date)) <= CONFIG.POSSIBLE_DUP_DAYS);\n    if (possible) blocking.push(`POSSIBLE_DUPLICATE of ${possible.file || possible.no}`);\n  }\n  seen.push({ vk, no, total, date: inv.invoice_date, file: inv.source_file });\n\n  // Footing and data quality (from Day 2 checks)\n  if (inv.footing_ok === false || String(inv.footing_ok).toUpperCase() === 'FALSE')\n    blocking.push(`FOOTING_MISMATCH (diff ${inv.footing_diff})`);\n  if (/MISSING_|BAD_DATE|NO_LINE/.test(inv.flags || '')) blocking.push('DATA_QUALITY');\n\n  // Date sanity\n  if (inv.invoice_date) {\n    const age = daysBetween(CONFIG.AS_OF, inv.invoice_date);\n    if (age < 0) blocking.push('FUTURE_DATED');\n    else if (age > CONFIG.MAX_AGE_DAYS) blocking.push(`STALE_INVOICE (${age} days)`);\n  }\n\n  // Service in an earlier month → cut-off / accrual review\n  const svcStart = firstDate(inv.service_period);\n  if (svcStart && inv.invoice_date && svcStart.slice(0, 7) < inv.invoice_date.slice(0, 7)) {\n    hold = true;\n    notes.push(`SERVICE_PERIOD_REVIEW: service from ${svcStart} – check prior-period accrual`);\n  }\n\n  // Capex indicator\n  let lines = [];\n  try { lines = JSON.parse(inv.lines_json || '[]'); } catch (e) {}\n  const capexAmt = lines\n    .filter(l => CONFIG.CAPEX_WORDS.some(w => String(l.description || '').toLowerCase().includes(w)))\n    .reduce((s, l) => s + Number(l.amount || 0), 0);\n  if (capexAmt >= CONFIG.CAPEX_MIN)\n    notes.push(`CAPEX_REVIEW: ${capexAmt.toFixed(2)} on asset lines – check capitalisation (incl. freight)`);\n\n  // Approval limit\n  if (total > CONFIG.APPROVAL_LIMIT) {\n    needsApproval = true;\n    notes.push(`OVER_APPROVAL_LIMIT (${CONFIG.APPROVAL_LIMIT})`);\n  }\n  if ((inv.flags || '').includes('CURRENCY_DEFAULTED')) notes.push('CURRENCY_DEFAULTED_USD');\n\n  const status = blocking.length ? 'EXCEPTION'\n               : hold ? 'HOLD'\n               : needsApproval ? 'NEEDS_APPROVAL'\n               : 'READY';\n\n  return { json: {\n    ...inv,\n    qbo_vendor_id:    v ? v.id : '',\n    qbo_vendor_name:  v ? v.name : '',\n    status,\n    exception_reason: blocking.join(' | '),\n    review_notes:     notes.join(' | '),\n    controls_run_at:  runAt,\n  }};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        176
+      ],
+      "id": "8d2e5cfa-8c01-4fe2-9d74-a24ebd2dc6ef",
+      "name": "Controls"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "READY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "c0081897-7a2b-470b-9aba-5e234a9434d7"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ready"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "3c118dd1-bd20-492c-aca6-f91d5acd77c3",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "NEEDS_APPROVAL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "review"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "11cba546-a8ec-4ac1-bfd3-533630394f46",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "HOLD",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "review"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ef4ed08f-b241-42fd-954e-e58e0d8a5fd2",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "EXCEPTION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "review"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        144
+      ],
+      "id": "8128c0f7-391d-4311-90b6-715a43643886",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "resource": "bill",
+        "operation": "create",
+        "VendorRef": "={{ $json.qbo_vendor_id }}",
+        "Line": [
+          {
+            "Amount": "={{ $json.total_amount }}",
+            "Description": "={{ $json.invoice_number }}",
+            "DetailType": "=AccountBasedExpenseLineDetail",
+            "accountId": "={{ $json.qbo_account_id }}"
+          }
+        ],
+        "additionalFields": {
+          "DueDate": "={{ $json.due_date }}",
+          "TxnDate": "={{ $json.invoice_date }}"
+        }
+      },
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        0
+      ],
+      "id": "23806e15-792a-4bd3-9ddf-727b7886bd68",
+      "name": "Create QBO bill",
+      "credentials": {
+        "quickBooksOAuth2Api": {
+          "id": "MOT4xF5Dgu0847sf",
+          "name": "QBO Sandbox – NovaTech"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ap-review@example.com",
+        "subject": "={{ 'AP Review Required: ' + $input.item.json.invoice_number + ' – ' + $input.item.json.vendor_name }}",
+        "message": "=<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;\">\n  \n  <h2 style=\"color: #d9534f; border-bottom: 2px solid #d9534f; padding-bottom: 10px;\">\n    ⚠️ AP Review Required\n  </h2>\n\n  <p style=\"color: #333;\">An invoice has been flagged and requires your review before processing.</p>\n\n  <table style=\"width: 100%; border-collapse: collapse; margin: 20px 0;\">\n    <tr style=\"background-color: #f9f9f9;\">\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold; width: 40%;\">Invoice Number</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $input.item.json.invoice_number }}</td>\n    </tr>\n    <tr>\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold;\">Vendor</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $input.item.json.vendor_name }}</td>\n    </tr>\n    <tr style=\"background-color: #f9f9f9;\">\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold;\">Amount</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $input.item.json.currency }} {{ $input.item.json.total_amount }}</td>\n    </tr>\n    <tr>\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold;\">Invoice Date</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $input.item.json.invoice_date }}</td>\n    </tr>\n    <tr style=\"background-color: #f9f9f9;\">\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold;\">Status</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd;\">{{ $input.item.json.status }}</td>\n    </tr>\n    <tr>\n      <td style=\"padding: 10px; border: 1px solid #ddd; font-weight: bold;\">Reason for Review</td>\n      <td style=\"padding: 10px; border: 1px solid #ddd; color: #d9534f;\">{{ $input.item.json.exception_reason }}</td>\n    </tr>\n  </table>\n\n  <p style=\"color: #666; font-size: 13px;\">Please log in to QuickBooks to review and approve or reject this invoice.</p>\n\n  <p style=\"color: #999; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px;\">\n    This is an automated alert from your AP Invoice Automation workflow.\n  </p>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1904,
+        176
+      ],
+      "id": "0e159231-4cc4-41f2-8198-fa95e524edda",
+      "name": "Send Approval Email",
+      "webhookId": "69e6ca5b-c971-462d-a36d-a5ad0a7a224b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "uSSHF8PWzCSA1dKI",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q",
+          "mode": "list",
+          "cachedResultName": "NovaTech AP – Invoice Register",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1753138458,
+          "mode": "list",
+          "cachedResultName": "audit_log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1YiLg71lcKyLVNIkeKBrF5bycfe7oYVOxHnkuTjxTx-Q/edit#gid=1753138458"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "logged_at": "={{ new Date().toISOString() }}",
+            "invoice_number": "={{ $('Preserve Invoice Data').item.json.invoice_number }}",
+            "vendor_name": "={{ $('Preserve Invoice Data').item.json.vendor_name }}",
+            "status": "={{ $('Preserve Invoice Data').item.json.status }}",
+            "action_taken": "={{ $('Preserve Invoice Data').item.json.status === 'READY' ? 'BILL_CREATED' : 'EMAIL_SENT' }}",
+            "qbo_bill_id": "={{ $('Preserve Invoice Data').item.json.status === 'READY' ? ($json.Id ?? '') : '' }}",
+            "notified_to": "={{ $('Preserve Invoice Data').item.json.status === 'READY' ? '' : 'ap-review@example.com' }}",
+            "notes": "={{ $('Preserve Invoice Data').item.json.status === 'READY' ? ('Coded to ' + ($('Map GL account').item.json.qbo_account_name ?? '')) : ($('Preserve Invoice Data').item.json.exception_reason ?? '') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "logged_at",
+              "id": "logged_at",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "invoice_number",
+              "id": "invoice_number",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "vendor_name",
+              "id": "vendor_name",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "status",
+              "id": "status",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "action_taken",
+              "id": "action_taken",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "qbo_bill_id",
+              "id": "qbo_bill_id",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "notified_to",
+              "id": "notified_to",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "notes",
+              "id": "notes",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2160,
+        0
+      ],
+      "id": "882abc46-73ea-4080-8c72-7e21ea26053a",
+      "name": "Append to audit log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "8VcWuAZMniGkwK1q",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        1760,
+        -160
+      ],
+      "id": "b9e2fdc6-4ff6-4927-a8bf-b1c8c9da0113",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "sendTo": "ap-review@example.com",
+        "subject": "AP Automation Error – Workflow Failed",
+        "emailType": "text",
+        "message": "={{ $json.execution.error.message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1984,
+        -160
+      ],
+      "id": "1152ea1f-0d21-4a1e-af99-abb6132244c7",
+      "name": "Send Error Alert",
+      "webhookId": "beec2839-42a4-489a-993a-31c012f8b41c",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "uSSHF8PWzCSA1dKI",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e35f1991-ab81-4e1e-92b0-cd6e465c5f4e",
+              "name": "invoice_number",
+              "type": "string",
+              "value": "={{ $json.invoice_number }}"
+            },
+            {
+              "id": "f5adcb03-7979-4e50-9f82-0d69a8779e25",
+              "name": "vendor_name",
+              "type": "string",
+              "value": "={{ $json.vendor_name }}"
+            },
+            {
+              "id": "dd985b23-9581-42b2-96ca-e3a4a4059ed1",
+              "name": "status",
+              "type": "string",
+              "value": "={{ $json.status }}"
+            },
+            {
+              "id": "22075f91-51e5-4e0e-b839-dd134292716b",
+              "name": "exception_reason",
+              "type": "string",
+              "value": "={{ $json.exception_reason }}"
+            },
+            {
+              "id": "46040ba1-2210-492e-afad-20b90bc0112f",
+              "name": "total_amount",
+              "type": "string",
+              "value": "={{ $json.stated_total }}"
+            },
+            {
+              "id": "bc03adbc-9de5-4ad5-ad89-6228814d88da",
+              "name": "currency",
+              "type": "string",
+              "value": "={{ $json.currency }}"
+            },
+            {
+              "id": "b312b95b-9ba4-49ea-8c75-49e1c452018a",
+              "name": "invoice_date",
+              "type": "string",
+              "value": "={{ $json.invoice_date }}"
+            },
+            {
+              "id": "01a8050b-9703-4d2d-b8df-630cb991a2a6",
+              "name": "qbo_vendor_id",
+              "type": "string",
+              "value": "={{ $json.qbo_vendor_id }}"
+            },
+            {
+              "id": "a7a4f243-3f15-4bc7-92b7-81a9b3d15291",
+              "name": "due_date",
+              "type": "string",
+              "value": "={{ $json.due_date }}"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1520,
+        -16
+      ],
+      "id": "40758973-80c6-410b-9dc1-f086602f65fc",
+      "name": "Preserve Invoice Data"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Map vendor + line items -> GL expense account for the QBO bill\n// Runs only on the READY branch. First matching rule wins; unknown -> Uncategorized.\nconst inv = $json;\nconst vendor = String(inv.qbo_vendor_name || inv.vendor_name || '').toLowerCase();\nlet lines = [];\ntry { lines = JSON.parse(inv.lines_json || '[]'); } catch (e) {}\nconst lineText = lines.map(l => String(l.description || '')).join(' ').toLowerCase();\nconst hay = vendor + ' ' + lineText;\n\n// NovaTech chart of accounts - expense accounts (QBO Ids)\nconst ACCT = {\n  software:  { id: '1150040037', name: 'Software Subscriptions' },\n  cloud:     { id: '1150040038', name: 'Cloud Hosting – Internal' },\n  utilities: { id: '1150040036', name: 'Utilities & Internet' },\n  travel:    { id: '112',        name: 'Travel' },\n  meals:     { id: '113',        name: 'Travel Meals' },\n  marketing: { id: '97',         name: 'Marketing & Advertising' },\n  acctgTax:  { id: '1150040040', name: 'Accounting & Tax Fees' },\n  legal:     { id: '1150040039', name: 'Legal Fees' },\n  office:    { id: '110',        name: 'Office Supplies & Small Equipment' },\n  taxesLic:  { id: '1150040048', name: 'Taxes & Licenses' },\n  bankFees:  { id: '98',         name: 'Bank Charges' },\n  insurance: { id: '101',        name: 'Insurance' },\n  rent:      { id: '1150040035', name: 'Rent' },\n  uncat:     { id: '124',        name: 'Uncategorized Expense' },\n};\n\n// Keyword rules, first match wins\nconst RULES = [\n  [/slack|hubspot|zoom|microsoft|google workspace|adobe|notion|atlassian|dropbox|subscription|software|licen[cs]e/, ACCT.software],\n  [/aws|amazon web|azure|gcp|google cloud|cloud hosting|hosting|server|digitalocean/, ACCT.cloud],\n  [/comcast|verizon|at&t|internet|broadband|utilit|electric|water|phone|telecom/, ACCT.utilities],\n  [/airfare|flight|hotel|airline|booking|skyward|travel/, ACCT.travel],\n  [/meal|restaurant|catering|dining/, ACCT.meals],\n  [/marketing|advertis|google ads|facebook ads|linkedin ads|campaign/, ACCT.marketing],\n  [/accounting|audit|bookkeep|\\bcpa\\b|tax prep/, ACCT.acctgTax],\n  [/legal|attorney|law firm|counsel/, ACCT.legal],\n  [/office suppl|stationery|equipment|printer|toner/, ACCT.office],\n  [/delaware division|franchise tax|secretary of state|registration|filing fee|\\blicense\\b/, ACCT.taxesLic],\n  [/bank charge|wire fee|processing fee|stripe|merchant fee/, ACCT.bankFees],\n  [/insurance|premium/, ACCT.insurance],\n  [/\\brent\\b|lease|landlord/, ACCT.rent],\n];\n\nlet acct = ACCT.uncat;\nfor (const [re, a] of RULES) { if (re.test(hay)) { acct = a; break; } }\n\nreturn { ...inv, qbo_account_id: acct.id, qbo_account_name: acct.name };"
+      },
+      "id": "d61226e3-5d6b-44cb-a9b0-036f01ecf5fa",
+      "name": "Map GL account",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Normalise intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "QBO vendors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalise intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise intake": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "QBO vendors": {
+      "main": [
+        [
+          {
+            "node": "Read register",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read register": {
+      "main": [
+        [
+          {
+            "node": "Controls",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Controls": {
+      "main": [
+        [
+          {
+            "node": "Append to register",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to register": {
+      "main": [
+        [
+          {
+            "node": "Preserve Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Map GL account",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create QBO bill": {
+      "main": [
+        [
+          {
+            "node": "Append to audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Append to audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map GL account": {
+      "main": [
+        [
+          {
+            "node": "Create QBO bill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "EoxJPUu4JIGocFx3",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": true
+  },
+  "versionId": "7ba05664-1a74-4a87-8a49-8ed29e229936",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "41002fdb7aa5974600c966fb7cae690b4b20428bf87bbde1f02d648620aad3d7"
+  },
+  "nodeGroups": [],
+  "id": "EoxJPUu4JIGocFx3",
+  "tags": []
+}
