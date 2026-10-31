@@ -1,4 +1,4 @@
-# NovaTech AP Invoice Automation
+#  AP Invoice Automation
 
 An AI-assisted **accounts-payable automation** built in [n8n](https://n8n.io). A vendor invoice (PDF) arrives by email; the workflow reads it, runs a full set of accounting controls over it, and then **either posts a bill to QuickBooks Online automatically or routes it to a human for review** — logging every decision to an append-only audit trail.
 
